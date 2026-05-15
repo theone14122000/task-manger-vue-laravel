@@ -8,55 +8,153 @@ use App\Models\Task;
 
 class TaskController extends Controller
 {
+    /*
+    |--------------------------------------------------------------------------
+    | USER TASKS
+    |--------------------------------------------------------------------------
+    */
+
     public function index()
     {
         return Task::where('user_id', auth()->id())
-            ->latest()
+            ->orderBy('position')
             ->paginate(6);
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | ADMIN TASKS
+    |--------------------------------------------------------------------------
+    */
+
     public function adminTasks()
     {
-        return Task::with('user')
-            ->latest()
-            ->paginate(6);
+        $tasks = Task::with('user')
+            ->orderBy('position')
+            ->paginate(10);
+
+        return response()->json([
+            'data' => $tasks->items(),
+            'current_page' => $tasks->currentPage(),
+            'last_page' => $tasks->lastPage(),
+        ]);
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CREATE TASK
+    |--------------------------------------------------------------------------
+    */
 
     public function store(Request $request)
     {
         $request->validate([
-            'title' => 'required'
+            'title' => 'required|string|max:255',
+            'priority' => 'required|in:low,medium,high',
+            'status' => 'required|in:todo,progress,completed',
+            'due_date' => 'nullable|date',
         ]);
 
-        return Task::create([
+        $lastPosition = Task::max('position') ?? 0;
+
+        $task = Task::create([
             'title' => $request->title,
-            'completed' => false,
-            'user_id' => $request->user()->id,
-            'priority' => $request->priority ?? 'medium',
+            'priority' => $request->priority,
+            'status' => $request->status,
+            'completed' => $request->status === 'completed',
+            'user_id' => auth()->id(),
+            'due_date' => $request->due_date,
+            'position' => $lastPosition + 1,
         ]);
+
+        return response()->json($task, 201);
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | UPDATE TASK
+    |--------------------------------------------------------------------------
+    */
 
     public function update(Request $request, Task $task)
     {
-        $task->update([
-            'title' => $request->title,
-            'completed' => $request->completed ?? $task->completed
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'priority' => 'required|in:low,medium,high',
+            'status' => 'required|in:todo,progress,completed',
+            'due_date' => 'nullable|date',
         ]);
 
-        return response()->json($task);
+        $validated['completed'] =
+            $validated['status'] === 'completed';
+
+        $task->update($validated);
+
+        return response()->json([
+            'message' => 'Task updated successfully',
+            'task' => $task
+        ]);
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | DELETE TASK
+    |--------------------------------------------------------------------------
+    */
 
     public function destroy(Task $task)
     {
         $task->delete();
-        return response()->json(['message' => 'deleted']);
+
+        return response()->json([
+            'message' => 'Task deleted'
+        ]);
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | TOGGLE TASK
+    |--------------------------------------------------------------------------
+    */
+
     public function toggle(Task $task)
     {
         $task->completed = !$task->completed;
 
+        $task->status =
+            $task->completed
+                ? 'completed'
+                : 'todo';
+
         $task->save();
 
-        return response()->json($task);
+        return response()->json([
+            'message' => 'Task toggled',
+            'task' => $task
+        ]);
     }
-    
+
+    /*
+    |--------------------------------------------------------------------------
+    | REORDER TASKS
+    |--------------------------------------------------------------------------
+    */
+
+    public function reorder(Request $request)
+    {
+        foreach ($request->tasks as $taskData) {
+
+            Task::where('id', $taskData['id'])
+                ->update([
+                    'position' => $taskData['position'],
+                    'status' => $taskData['status'],
+                    'completed' =>
+                        $taskData['status'] === 'completed'
+                ]);
+        }
+
+        return response()->json([
+            'message' => 'Tasks reordered successfully'
+        ]);
+    }
 }

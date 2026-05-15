@@ -14,6 +14,8 @@ use App\Http\Controllers\Api\TaskController;
 |--------------------------------------------------------------------------
 */
 
+Route::post('/tasks/reorder', [TaskController::class, 'reorder']);
+
 // REGISTER
 Route::post('/register', [AuthController::class, 'register']);
 
