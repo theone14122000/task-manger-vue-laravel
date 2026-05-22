@@ -15,11 +15,11 @@ class TaskController extends Controller
     */
 
     public function index()
-    {
-        return Task::where('user_id', auth()->id())
-            ->orderBy('position')
-            ->paginate(6);
-    }
+{
+    $tasks = Task::with('user')->paginate(10);
+
+    return response()->json($tasks);
+}
 
     /*
     |--------------------------------------------------------------------------
@@ -28,17 +28,18 @@ class TaskController extends Controller
     */
 
     public function adminTasks()
-    {
-        $tasks = Task::with('user')
-            ->orderBy('position')
-            ->paginate(10);
+{
+    $tasks = Task::with('user')
+        ->orderBy('position')
+        ->paginate(10);
 
-        return response()->json([
-            'data' => $tasks->items(),
-            'current_page' => $tasks->currentPage(),
-            'last_page' => $tasks->lastPage(),
-        ]);
-    }
+    return response()->json([
+        'data' => $tasks->items(),
+        'current_page' => $tasks->currentPage(),
+        'last_page' => $tasks->lastPage(),
+        'total' => $tasks->total(),
+    ]);
+}
 
     /*
     |--------------------------------------------------------------------------
@@ -48,24 +49,41 @@ class TaskController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
-            'title' => 'required|string|max:255',
-            'priority' => 'required|in:low,medium,high',
-            'status' => 'required|in:todo,progress,completed',
-            'due_date' => 'nullable|date',
-        ]);
+            $request->validate([
+        'title' => 'required|string|max:255',
+        'priority' => 'required',
+        'status' => 'required',
+        'due_date' => 'nullable|date',
+        'attachment' =>'nullable|file|mimes:jpg,jpeg,png,webp,pdf,doc,docx|max:2048',    ]);
+       
 
         $lastPosition = Task::max('position') ?? 0;
 
-        $task = Task::create([
-            'title' => $request->title,
-            'priority' => $request->priority,
-            'status' => $request->status,
-            'completed' => $request->status === 'completed',
-            'user_id' => auth()->id(),
-            'due_date' => $request->due_date,
-            'position' => $lastPosition + 1,
-        ]);
+        $attachmentPath = null;
+
+if ($request->hasFile('attachment')) {
+
+    $attachmentPath = $request
+        ->file('attachment')
+        ->store('attachments', 'public');
+}
+
+$task = Task::create([
+
+    'title' => $request->title,
+
+    'priority' => $request->priority,
+
+    'status' => $request->status,
+
+    'completed' => false,
+
+    'user_id' => auth()->id(),
+
+    'due_date' => $request->due_date,
+
+    'attachment' => $attachmentPath,
+]);
 
         return response()->json($task, 201);
     }
@@ -141,20 +159,19 @@ class TaskController extends Controller
     */
 
     public function reorder(Request $request)
-    {
-        foreach ($request->tasks as $taskData) {
+{
+    foreach ($request->tasks as $taskData) {
 
-            Task::where('id', $taskData['id'])
-                ->update([
-                    'position' => $taskData['position'],
-                    'status' => $taskData['status'],
-                    'completed' =>
-                        $taskData['status'] === 'completed'
-                ]);
-        }
-
-        return response()->json([
-            'message' => 'Tasks reordered successfully'
-        ]);
+        Task::where('id', $taskData['id'])
+            ->update([
+                'status' => $taskData['status'],
+                'position' => $taskData['position'],
+                'completed' => $taskData['status'] === 'completed'
+            ]);
     }
+
+    return response()->json([
+        'message' => 'Tasks reordered successfully'
+    ]);
+}
 }

@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import api from '../api/axios'
 import Navbar from '../components/Navbar.vue'
 import { useToast } from 'vue-toastification'
 import draggable from 'vuedraggable'
 
 const toast = useToast()
+const totalCount = ref(0)
+
+
+const attachment = ref<File | null>(null)
+const selectedFile = ref<File | null>(null)
 
 const tasks = ref<any[]>([])
 const filteredTasks = ref<any[]>([])
@@ -26,6 +31,28 @@ const filter = ref('all')
 
 const currentPage = ref(1)
 const lastPage = ref(1)
+
+const totalTasks = computed(() => totalCount.value)
+
+const completedCount = computed(() =>
+  tasks.value.filter(task =>
+    task.status === 'completed' ||
+    task.completed == 1
+  ).length
+)
+
+const pendingCount = computed(() =>
+  tasks.value.filter(task =>
+    task.status !== 'completed' &&
+    task.completed == 0
+  ).length
+)
+
+const highPriorityCount = computed(() =>
+  tasks.value.filter(task =>
+    task.priority === 'high'
+  ).length
+)
 
 const splitTasks = () => {
 
@@ -96,24 +123,35 @@ const fetchTasks = async (page = 1) => {
 
       lastPage.value = response.data.last_page || 1
 
+      totalCount.value = response.data.total || 0
+
     } else if (Array.isArray(response.data)) {
 
       tasks.value = response.data
 
+      totalCount.value = response.data.length
+
     } else {
 
       tasks.value = []
+
+      totalCount.value = 0
     }
 
     splitTasks()
 
   } catch (error: any) {
 
-    console.log('FETCH ERROR', error)
+    console.log('FETCH ERROR', error.response?.data || error)
 
     tasks.value = []
+
+    totalCount.value = 0
+
+    splitTasks()
   }
 }
+
 
 const saveTaskOrder = async () => {
 
@@ -146,10 +184,11 @@ const saveTaskOrder = async () => {
 
     toast.success('Order Saved')
 
-  } catch (error) {
+   } catch (error: any) {
 
-    console.log('REORDER ERROR', error)
+    console.log('CREATE ERROR', error.response?.data || error)
   }
+
 }
 
 const onTodoChange = async () => {
@@ -182,32 +221,62 @@ const onCompletedChange = async () => {
   await saveTaskOrder()
 }
 
+const handleFileUpload = (event: any) => {
+
+  const file = event.target.files[0]
+
+  if (file) {
+
+    selectedFile.value = file
+
+    console.log(file)
+  }
+}
+
 const createTask = async () => {
 
   if (!title.value.trim()) return
 
   try {
 
-    await api.post('/tasks', {
-      title: title.value,
-      priority: priority.value,
-      status: status.value,
-      due_date: dueDate.value,
-      completed: status.value === 'completed'
+    const formData = new FormData()
+
+    formData.append('title', title.value)
+    formData.append('priority', priority.value)
+    formData.append('status', status.value)
+    formData.append('due_date', dueDate.value)
+
+    if (selectedFile.value) {
+
+      formData.append(
+        'attachment',
+        selectedFile.value
+      )
+    }
+
+    await api.post('/tasks', formData, {
+
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
     })
 
     title.value = ''
     priority.value = 'medium'
     status.value = 'todo'
     dueDate.value = ''
+    selectedFile.value = null
 
     fetchTasks(currentPage.value)
 
     toast.success('Task Created')
 
-  } catch (error) {
+  } catch (error: any) {
 
-    console.log('CREATE ERROR', error)
+    console.log(
+      'CREATE ERROR',
+      error.response.data
+    )
   }
 }
 
@@ -239,6 +308,7 @@ const updateTask = async () => {
     priority.value = 'medium'
     status.value = 'todo'
     dueDate.value = ''
+    attachment.value = null
 
     fetchTasks(currentPage.value)
 
@@ -300,7 +370,6 @@ onMounted(() => {
 
     <div class="max-w-7xl mx-auto">
 
-      <!-- HEADER -->
       <div class="mb-10">
 
         <h1 class="text-4xl font-bold text-gray-800 dark:text-white">
@@ -313,7 +382,6 @@ onMounted(() => {
 
       </div>
 
-      <!-- FORM -->
       <div
         class="bg-white dark:bg-gray-900 rounded-3xl shadow-lg p-6 mb-8"
       >
@@ -351,6 +419,12 @@ onMounted(() => {
             class="bg-white dark:bg-gray-800 text-black dark:text-white border border-gray-300 dark:border-gray-700 rounded-2xl px-4 py-3"
           />
 
+          <input
+              type="file"
+              @change="handleFileUpload"
+              class="bg-white dark:bg-gray-800 text-black dark:text-white border border-gray-300 dark:border-gray-700 rounded-2xl px-4 py-3"
+          />
+
           <button
             v-if="editingId === null"
             @click="createTask"
@@ -371,7 +445,50 @@ onMounted(() => {
 
       </div>
 
-      <!-- EMPTY -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-5 mb-8">
+
+        <div class="bg-white dark:bg-gray-900 rounded-3xl p-6 shadow-lg">
+          <p class="text-sm text-gray-500 dark:text-gray-400">
+            Total Tasks
+          </p>
+
+          <h2 class="text-3xl font-bold text-gray-800 dark:text-white mt-2">
+            {{ totalTasks }}
+          </h2>
+        </div>
+
+        <div class="bg-white dark:bg-gray-900 rounded-3xl p-6 shadow-lg">
+          <p class="text-sm text-green-500">
+            Completed
+          </p>
+
+          <h2 class="text-3xl font-bold text-green-500 mt-2">
+            {{ completedCount }}
+          </h2>
+        </div>
+
+        <div class="bg-white dark:bg-gray-900 rounded-3xl p-6 shadow-lg">
+          <p class="text-sm text-yellow-500">
+            Pending
+          </p>
+
+          <h2 class="text-3xl font-bold text-yellow-500 mt-2">
+            {{ pendingCount }}
+          </h2>
+        </div>
+
+        <div class="bg-white dark:bg-gray-900 rounded-3xl p-6 shadow-lg">
+          <p class="text-sm text-red-500">
+            High Priority
+          </p>
+
+          <h2 class="text-3xl font-bold text-red-500 mt-2">
+            {{ highPriorityCount }}
+          </h2>
+        </div>
+
+      </div>
+
       <div
         v-if="filteredTasks.length === 0"
         class="bg-white dark:bg-gray-900 rounded-3xl shadow-lg p-10 text-center text-gray-500 dark:text-gray-400"
@@ -379,18 +496,23 @@ onMounted(() => {
         No tasks found
       </div>
 
-      <!-- BOARD -->
       <div
         v-else
         class="grid grid-cols-1 md:grid-cols-3 gap-6"
       >
 
-        <!-- TODO -->
         <div class="bg-white dark:bg-gray-900 rounded-3xl p-5 shadow-lg">
 
-          <h2 class="text-xl font-bold mb-5 text-gray-700 dark:text-white">
-            Todo
+          <h2 class="text-xl font-bold mb-5 text-gray-700 dark:text-gray-100">
+            Todo ({{ todoTasks.length }})
           </h2>
+
+          <div
+            v-if="todoTasks.length === 0"
+            class="text-center text-gray-500 dark:text-gray-400 py-10 border-2 border-dashed border-gray-700 rounded-2xl"
+          >
+            No Todo Tasks
+          </div>
 
           <draggable
             v-model="todoTasks"
@@ -398,6 +520,8 @@ onMounted(() => {
             item-key="id"
             @change="onTodoChange"
             class="space-y-4 min-h-[300px]"
+            ghost-class="ghost-card"
+            animation="200"
           >
 
             <template #item="{ element }">
@@ -415,7 +539,6 @@ onMounted(() => {
                   <span
                     :class="[
                       'text-xs px-3 py-1 rounded-full',
-
                       element.priority === 'high'
                         ? 'bg-red-100 text-red-700'
                         : element.priority === 'medium'
@@ -457,6 +580,24 @@ onMounted(() => {
 
                 </div>
 
+                <div
+                    v-if="element.attachment"
+                    class="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-blue-50 px-3 py-2 dark:border-blue-900 dark:bg-blue-950/40"
+                  >
+                    <span class="text-sm font-medium text-blue-700 dark:text-blue-300">
+                      Attachment available
+                    </span>
+
+                    <a
+                      :href="`http://127.0.0.1:8000/storage/${element.attachment}`"
+                      target="_blank"
+                      class="text-sm font-semibold text-blue-600 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+                    >
+                      View Attachment
+                    </a>
+                </div>
+
+
                 <div class="flex gap-2">
 
                   <button
@@ -483,12 +624,18 @@ onMounted(() => {
 
         </div>
 
-        <!-- PROGRESS -->
         <div class="bg-white dark:bg-gray-900 rounded-3xl p-5 shadow-lg">
 
           <h2 class="text-xl font-bold mb-5 text-blue-700 dark:text-blue-300">
-            In Progress
+            In Progress ({{ progressTasks.length }})
           </h2>
+
+          <div
+            v-if="progressTasks.length === 0"
+            class="text-center text-gray-500 dark:text-gray-400 py-10 border-2 border-dashed border-gray-700 rounded-2xl"
+          >
+            No Tasks In Progress
+          </div>
 
           <draggable
             v-model="progressTasks"
@@ -496,6 +643,8 @@ onMounted(() => {
             item-key="id"
             @change="onProgressChange"
             class="space-y-4 min-h-[300px]"
+            ghost-class="ghost-card"
+            animation="200"
           >
 
             <template #item="{ element }">
@@ -513,7 +662,6 @@ onMounted(() => {
                   <span
                     :class="[
                       'text-xs px-3 py-1 rounded-full',
-
                       element.priority === 'high'
                         ? 'bg-red-100 text-red-700'
                         : element.priority === 'medium'
@@ -554,6 +702,15 @@ onMounted(() => {
                   </p>
 
                 </div>
+
+                <a
+                  v-if="element.attachment"
+                  :href="`http://127.0.0.1:8000/storage/${element.attachment}`"
+                  target="_blank"
+                  class="block text-sm text-blue-600 dark:text-blue-400 mb-4"
+                >
+                  View Attachment
+                </a>
 
                 <div class="flex gap-2">
 
@@ -581,12 +738,18 @@ onMounted(() => {
 
         </div>
 
-        <!-- COMPLETED -->
         <div class="bg-white dark:bg-gray-900 rounded-3xl p-5 shadow-lg">
 
           <h2 class="text-xl font-bold mb-5 text-green-700 dark:text-green-300">
-            Completed
+            Completed ({{ completedTasks.length }})
           </h2>
+
+          <div
+            v-if="completedTasks.length === 0"
+            class="text-center text-gray-500 dark:text-gray-400 py-10 border-2 border-dashed border-gray-700 rounded-2xl"
+          >
+            No Completed Tasks
+          </div>
 
           <draggable
             v-model="completedTasks"
@@ -594,6 +757,8 @@ onMounted(() => {
             item-key="id"
             @change="onCompletedChange"
             class="space-y-4 min-h-[300px]"
+            ghost-class="ghost-card"
+            animation="200"
           >
 
             <template #item="{ element }">
@@ -611,7 +776,6 @@ onMounted(() => {
                   <span
                     :class="[
                       'text-xs px-3 py-1 rounded-full',
-
                       element.priority === 'high'
                         ? 'bg-red-100 text-red-700'
                         : element.priority === 'medium'
@@ -651,6 +815,47 @@ onMounted(() => {
                     </span>
                   </p>
 
+                </div>
+
+              <!-- ATTACHMENT SECTION -->
+                <div
+                  v-if="element.attachment"
+                  class="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 dark:border-emerald-900 dark:bg-emerald-950/30"
+                >
+                  <div class="flex items-center gap-2">
+                    <div
+                      class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"
+                    ></div>
+
+                    <span
+                      class="text-sm font-semibold text-emerald-700 dark:text-emerald-300"
+                    >
+                      Attachment Available
+                    </span>
+                  </div>
+
+                  <a
+                    :href="`http://127.0.0.1:8000/storage/${element.attachment}`"
+                    target="_blank"
+                    class="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-4 py-2 transition"
+                  >
+                    View File
+                  </a>
+                </div>
+
+                <div
+                  v-else
+                  class="mb-4 flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950/30"
+                >
+                  <div
+                    class="w-3 h-3 rounded-full bg-amber-500"
+                  ></div>
+
+                  <span
+                    class="text-sm font-semibold text-amber-700 dark:text-amber-300"
+                  >
+                    No Attachment
+                  </span>
                 </div>
 
                 <div class="flex gap-2">
@@ -681,7 +886,6 @@ onMounted(() => {
 
       </div>
 
-      <!-- PAGINATION -->
       <div
         v-if="lastPage > 1"
         class="flex justify-center items-center gap-4 mt-10"

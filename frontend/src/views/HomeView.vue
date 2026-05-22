@@ -4,29 +4,24 @@ import api from '../api/axios'
 import Navbar from '../components/Navbar.vue'
 import { useToast } from 'vue-toastification'
 
+const attachment = ref<File | null>(null)
+const fileInputKey = ref(0)
+
 const tasks = ref<any[]>([])
 const title = ref('')
 
 const search = ref('')
 const filter = ref('all')
 
-// status
 const status = ref('todo')
-
-// due dates
 const dueDate = ref('')
-
-// priority
 const priority = ref('medium')
 
-// toast
 const toast = useToast()
 
-// pagination
 const currentPage = ref(1)
-const perPage = ref(5)
+const perPage = ref(6)
 
-// dark mode
 const darkMode = ref(false)
 
 const updateTheme = () => {
@@ -69,25 +64,37 @@ const createTask = async () => {
 
   try {
 
-    await api.post('/tasks', {
-      title: title.value,
-      priority: priority.value,
-      status: status.value,
-      due_date: dueDate.value
+    const formData = new FormData()
+
+    formData.append('title', title.value)
+    formData.append('priority', priority.value)
+    formData.append('status', status.value)
+    formData.append('due_date', dueDate.value)
+
+    if (attachment.value) {
+      formData.append('attachment', attachment.value)
+    }
+
+    await api.post('/tasks', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
     })
 
     title.value = ''
     priority.value = 'medium'
     status.value = 'todo'
     dueDate.value = ''
+    attachment.value = null
+    fileInputKey.value++
 
     fetchTasks()
 
-    toast.success('Task Created Successfully')
+    toast.success('Task Created')
 
   } catch (error) {
 
-    console.log(error)
+    console.log('CREATE ERROR', error)
   }
 }
 
@@ -125,12 +132,16 @@ const completedTasksCount = computed(() => {
   return tasks.value.filter((task: any) => task.completed).length
 })
 
+const pendingTasksCount = computed(() => {
+  return tasks.value.filter((task: any) => !task.completed).length
+})
+
 const filteredTasks = computed(() => {
 
   return tasks.value.filter((task: any) => {
 
     const matchesSearch =
-      task.title
+      (task.title || '')
         .toLowerCase()
         .includes(search.value.toLowerCase())
 
@@ -176,6 +187,13 @@ watch(filteredTasks, () => {
   }
 })
 
+const handleFileUpload = (event: Event) => {
+
+  const input = event.target as HTMLInputElement
+
+  attachment.value = input.files?.[0] || null
+}
+
 onMounted(() => {
 
   fetchTasks()
@@ -193,290 +211,285 @@ onMounted(() => {
 </script>
 
 <template>
-<Navbar
-  :isAdmin="false"
-  :showSearch="true"
-  :search="search"
-  :filter="filter"
-  @update:search="search = $event"
-  @update:filter="filter = $event"
-/>
+  <Navbar
+    :isAdmin="false"
+    :showSearch="true"
+    :search="search"
+    :filter="filter"
+    @update:search="search = $event"
+    @update:filter="filter = $event"
+  />
 
-  <!-- PAGE -->
-  <div
-    class="min-h-screen bg-gradient-to-br from-slate-100 via-white to-slate-200 dark:from-gray-950 dark:via-gray-900 dark:to-black py-10 px-6"
-  >
+  <div class="min-h-screen bg-slate-100 dark:bg-gray-950 px-4 py-8 md:px-8">
 
-    <div class="max-w-5xl mx-auto">
+    <div class="max-w-7xl mx-auto space-y-6">
 
-      <!-- TOP DASHBOARD -->
-      <div
-        class="bg-white/80 dark:bg-gray-900/90 backdrop-blur-lg rounded-3xl shadow-2xl border border-white/30 dark:border-gray-700 p-8"
-      >
+      <div class="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
 
-        <!-- HEADER -->
-        <div class="flex items-center justify-between mb-8">
+        <div>
+          <h1 class="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white">
+            My Tasks
+          </h1>
 
-          <div>
-            <h1 class="text-4xl font-bold text-gray-800 dark:text-white">
-              My Tasks
-            </h1>
-
-            <p class="text-gray-500 dark:text-gray-400 mt-2">
-              Organize your work efficiently
-            </p>
-          </div>
-
-          <div class="flex items-center gap-4">
-
-            <!-- STATS -->
-            <div class="hidden md:flex gap-4">
-
-              <div
-                class="bg-blue-100 dark:bg-blue-900/40 px-5 py-3 rounded-2xl text-center"
-              >
-                <p class="text-sm text-gray-500 dark:text-gray-400">
-                  Total
-                </p>
-
-                <h2 class="text-2xl font-bold text-blue-700 dark:text-blue-300">
-                  {{ tasks.length }}
-                </h2>
-              </div>
-
-              <div
-                class="bg-green-100 dark:bg-green-900/40 px-5 py-3 rounded-2xl text-center"
-              >
-                <p class="text-sm text-gray-500 dark:text-gray-400">
-                  Completed
-                </p>
-
-                <h2 class="text-2xl font-bold text-green-700 dark:text-green-300">
-                  {{ completedTasksCount }}
-                </h2>
-              </div>
-
-            </div>
-
-          </div>
-
+          <p class="text-gray-500 dark:text-gray-400 mt-2">
+            Organize your work efficiently
+          </p>
         </div>
 
-        <!-- ADD TASK -->
-        <div class="flex gap-4 mb-8">
+        <button
+          @click="toggleDarkMode"
+          class="bg-gray-900 dark:bg-white text-white dark:text-gray-900 px-5 py-3 rounded-2xl font-semibold shadow-sm"
+        >
+          {{ darkMode ? 'Light' : 'Dark' }}
+        </button>
+
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+        <div class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-6 shadow-sm">
+          <p class="text-sm text-gray-500 dark:text-gray-400">
+            Total
+          </p>
+
+          <h2 class="text-3xl font-bold text-gray-900 dark:text-white mt-1">
+            {{ tasks.length }}
+          </h2>
+        </div>
+
+        <div class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-6 shadow-sm">
+          <p class="text-sm text-green-500">
+            Completed
+          </p>
+
+          <h2 class="text-3xl font-bold text-green-500 mt-1">
+            {{ completedTasksCount }}
+          </h2>
+        </div>
+
+        <div class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-6 shadow-sm">
+          <p class="text-sm text-yellow-500">
+            Pending
+          </p>
+
+          <h2 class="text-3xl font-bold text-yellow-500 mt-1">
+            {{ pendingTasksCount }}
+          </h2>
+        </div>
+
+      </div>
+
+      <div class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-5 shadow-sm">
+
+        <div class="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto_auto_auto_auto] gap-3">
 
           <input
             v-model="title"
             type="text"
             placeholder="What needs to be done?"
-            class="flex-1 bg-slate-100 dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-2xl px-5 py-4 text-gray-700 dark:text-white focus:outline-none focus:ring-4 focus:ring-blue-200"
+            class="bg-slate-50 dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-2xl px-4 py-3 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
 
           <select
             v-model="priority"
-            class="bg-white dark:bg-gray-800 text-gray-800 dark:text-white border border-gray-300 dark:border-gray-700 rounded-2xl px-4 py-3"
+            class="bg-slate-50 dark:bg-gray-800 text-gray-800 dark:text-white border border-gray-200 dark:border-gray-700 rounded-2xl px-4 py-3"
           >
-            <option value="low">
-              Low
-            </option>
-
-            <option value="medium">
-              Medium
-            </option>
-
-            <option value="high">
-              High
-            </option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
           </select>
 
           <select
             v-model="status"
-            class="bg-white dark:bg-gray-800 text-gray-800 dark:text-white border border-gray-300 dark:border-gray-700 rounded-2xl px-4 py-3"
+            class="bg-slate-50 dark:bg-gray-800 text-gray-800 dark:text-white border border-gray-200 dark:border-gray-700 rounded-2xl px-4 py-3"
           >
-            <option value="todo">
-              Todo
-            </option>
-
-            <option value="progress">
-              In Progress
-            </option>
+            <option value="todo">Todo</option>
+            <option value="progress">In Progress</option>
           </select>
 
           <input
             v-model="dueDate"
             type="date"
-            class="bg-white dark:bg-gray-800 text-gray-800 dark:text-white border border-gray-300 dark:border-gray-700 rounded-2xl px-4 py-3"
+            class="bg-slate-50 dark:bg-gray-800 text-gray-800 dark:text-white border border-gray-200 dark:border-gray-700 rounded-2xl px-4 py-3"
+          />
+
+          <input
+            :key="fileInputKey"
+            type="file"
+            @change="handleFileUpload"
+            class="bg-white dark:bg-gray-800 text-gray-800 dark:text-white border border-gray-200 dark:border-gray-700 rounded-2xl px-4 py-3"
           />
 
           <button
             @click="createTask"
-            class="bg-blue-600 hover:bg-blue-700 text-white px-8 rounded-2xl font-semibold shadow-lg transition"
+            class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-2xl font-semibold shadow-sm transition"
           >
             Add Task
           </button>
+
         </div>
 
-        <!-- EMPTY -->
+      </div>
+
+      <div
+        v-if="filteredTasks.length === 0"
+        class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-12 text-center"
+      >
+        <h2 class="text-2xl font-bold text-gray-800 dark:text-white">
+          No tasks found
+        </h2>
+
+        <p class="text-gray-500 dark:text-gray-400 mt-2">
+          Start by creating your first task
+        </p>
+      </div>
+
+      <div
+        v-else
+        class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"
+      >
+
         <div
-          v-if="filteredTasks.length === 0"
-          class="text-center py-20"
+          v-for="task in paginatedTasks"
+          :key="task.id"
+          class="bg-white dark:bg-gray-900 rounded-3xl shadow-lg border border-gray-200 dark:border-gray-800 p-6 hover:shadow-xl transition"
         >
 
-          <h2 class="text-2xl font-bold text-gray-700 dark:text-white">
-            No tasks found
+          <div class="flex items-center justify-between mb-5">
+
+            <span
+              :class="[
+                'text-xs font-semibold px-3 py-1 rounded-full',
+                task.completed
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-yellow-100 text-yellow-700'
+              ]"
+            >
+              {{ task.completed ? 'Completed' : 'Pending' }}
+            </span>
+
+            <span
+              :class="[
+                'text-xs font-semibold px-3 py-1 rounded-full',
+                task.priority === 'high'
+                  ? 'bg-red-100 text-red-700'
+                  : task.priority === 'medium'
+                    ? 'bg-yellow-100 text-yellow-700'
+                    : 'bg-green-100 text-green-700'
+              ]"
+            >
+              {{ task.priority }}
+            </span>
+
+          </div>
+
+          <h2
+            :class="[
+              'text-xl font-bold mb-3 break-words',
+              task.completed
+                ? 'line-through text-gray-400'
+                : 'text-gray-900 dark:text-white'
+            ]"
+          >
+            {{ task.title }}
           </h2>
 
-          <p class="text-gray-500 dark:text-gray-400 mt-2">
-            Start by creating your first task
+          <div class="flex flex-wrap items-center gap-2 mb-4">
+
+            <span class="text-sm text-gray-500 dark:text-gray-400">
+              ID #{{ task.id }}
+            </span>
+
+            <span
+              :class="[
+                'px-3 py-1 rounded-full text-sm font-medium',
+                task.status === 'todo'
+                  ? 'bg-gray-100 text-gray-700'
+                  : task.status === 'progress'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-green-100 text-green-700'
+              ]"
+            >
+              {{ task.status }}
+            </span>
+
+          </div>
+
+          <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Due:
+            <span class="font-semibold text-gray-700 dark:text-gray-200">
+              {{ task.due_date || 'No deadline' }}
+            </span>
           </p>
 
-        </div>
-
-        <!-- TASKS -->
-        <div
-          v-else
-          class="grid gap-5"
-        >
-
           <div
-            v-for="task in paginatedTasks"
-            :key="task.id"
-            class="bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-3xl p-5 shadow-md hover:shadow-xl transition-all duration-300"
+            v-if="task.attachment"
+            class="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-blue-50 px-3 py-2 dark:border-blue-900 dark:bg-blue-950/40"
           >
+            <span class="text-sm font-medium text-blue-700 dark:text-blue-300">
+              Attachment available
+            </span>
 
-            <div class="flex items-center justify-between">
+            <a
+              :href="`http://127.0.0.1:8000/storage/${task.attachment}`"
+              target="_blank"
+              class="text-sm font-semibold text-blue-600 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+            >
+              View Attachment
+            </a>
+          </div>
 
-              <!-- LEFT -->
-              <div class="flex items-center gap-4">
+          <div class="flex gap-3">
 
-                <input
-                  type="checkbox"
-                  :checked="task.completed"
-                  @change="toggleTask(task.id)"
-                  class="w-5 h-5 accent-blue-600"
-                />
+            <button
+              @click="toggleTask(task.id)"
+              :class="[
+                'flex-1 text-white py-3 rounded-2xl font-medium transition',
+                task.completed
+                  ? 'bg-yellow-500 hover:bg-yellow-600'
+                  : 'bg-green-500 hover:bg-green-600'
+              ]"
+            >
+              {{ task.completed ? 'Undo' : 'Complete' }}
+            </button>
 
-                <div>
-
-                  <h2
-                    :class="[
-                      'text-lg font-semibold',
-                      task.completed
-                        ? 'line-through text-gray-400'
-                        : 'text-gray-800 dark:text-white'
-                    ]"
-                  >
-                    {{ task.title }}
-                  </h2>
-
-                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                    <b> Due:
-                    <u>{{ task.due_date || 'No deadline' }}</u></b>
-                  </p>
-
-                  <p class="text-sm text-gray-400">
-                    Task ID: #{{ task.id }}
-                  </p>
-
-                </div>
-
-              </div>
-
-              <!-- RIGHT -->
-              <div class="flex items-center gap-3">
-
-                <span
-                  :class="[
-                    'px-4 py-2 rounded-xl text-sm font-medium',
-                    task.completed
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-yellow-100 text-yellow-700'
-                  ]"
-                >
-                  {{ task.completed ? 'Completed' : 'Pending' }}
-                </span>
-
-                <span
-                  :class="[
-                    'px-3 py-1 rounded-full text-sm font-medium',
-
-                    task.priority === 'high'
-                      ? 'bg-red-100 text-red-700'
-
-                      : task.priority === 'medium'
-                        ? 'bg-yellow-100 text-yellow-700'
-
-                        : 'bg-green-100 text-green-700'
-                  ]"
-                >
-                  {{ task.priority }}
-                </span>
-
-                <span
-                  :class="[
-                    'px-3 py-1 rounded-full text-sm font-medium',
-
-                    task.status === 'todo'
-                      ? 'bg-gray-100 text-gray-700'
-
-                      : task.status === 'progress'
-                        ? 'bg-blue-100 text-blue-700'
-
-                        : 'bg-green-100 text-green-700'
-                  ]"
-                >
-                  {{ task.status }}
-                </span>
-
-                <button
-                  @click="toggleTask(task.id)"
-                  class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-xl font-medium transition"
-                >
-                  {{ task.completed ? 'Undo' : 'Complete' }}
-                </button>
-
-                <button
-                  @click="deleteTask(task.id)"
-                  class="bg-red-100 hover:bg-red-200 text-red-600 px-4 py-2 rounded-xl font-medium transition"
-                >
-                  Delete
-                </button>
-
-              </div>
-
-            </div>
+            <button
+              @click="deleteTask(task.id)"
+              class="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-2xl font-medium transition"
+            >
+              Delete
+            </button>
 
           </div>
 
         </div>
 
-        <!-- PAGINATION -->
-        <div
-          v-if="lastPage > 1"
-          class="flex items-center justify-center gap-4 mt-8"
+      </div>
+
+      <div
+        v-if="lastPage > 1"
+        class="flex items-center justify-center gap-4 pt-2"
+      >
+
+        <button
+          @click="changePage(currentPage - 1)"
+          :disabled="currentPage === 1"
+          class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed px-5 py-3 rounded-xl transition"
         >
+          Previous
+        </button>
 
-          <button
-            @click="changePage(currentPage - 1)"
-            :disabled="currentPage === 1"
-            class="bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed px-5 py-3 rounded-2xl transition"
-          >
-            Previous
-          </button>
+        <span class="text-gray-600 dark:text-gray-300 font-medium">
+          Page {{ currentPage }} of {{ lastPage }}
+        </span>
 
-          <span class="text-gray-600 dark:text-gray-300 font-medium">
-            Page {{ currentPage }} of {{ lastPage }}
-          </span>
-
-          <button
-            @click="changePage(currentPage + 1)"
-            :disabled="currentPage === lastPage"
-            class="bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed px-5 py-3 rounded-2xl transition"
-          >
-            Next
-          </button>
-
-        </div>
+        <button
+          @click="changePage(currentPage + 1)"
+          :disabled="currentPage === lastPage"
+          class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed px-5 py-3 rounded-xl transition"
+        >
+          Next
+        </button>
 
       </div>
 
